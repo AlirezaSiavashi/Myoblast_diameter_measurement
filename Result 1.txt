@@ -1,0 +1,18 @@
+No.	Measure	Result
+1	Between 2-points	52	µm
+2	Between 2-points	22	µm
+3	Between 2-points	23	µm
+4	Between 2-points	26	µm
+5	Between 2-points	39	µm
+6	Between 2-points	25	µm
+7	Between 2-points	23	µm
+8	Between 2-points	16	µm
+9	Between 2-points	16	µm
+10	Between 2-points	18	µm
+11	Between 2-points	24	µm
+12	Between 2-points	44	µm
+13	Between 2-points	51	µm
+14	Between 2-points	24	µm
+15	Between 2-points	43	µm
+16	Between 2-points	12	µm
+17	Between 2-points	8	µm

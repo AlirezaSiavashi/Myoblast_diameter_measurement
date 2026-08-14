@@ -1,0 +1,28 @@
+{
+  "field": "E40_scrambled_3d_20x_01",
+  "px_per_um": 1.32,
+  "mhc_area_pct": 15.8,
+  "red_blobs": 15,
+  "auto_diam": {
+    "n": 107,
+    "mean": 22.8,
+    "median": 19.7,
+    "p25": 14.9,
+    "p75": 29.3,
+    "min": 3.0,
+    "max": 57.7
+  },
+  "katja_diam": {
+    "n": 17,
+    "mean": 27.4,
+    "median": 24.0,
+    "p25": 18.0,
+    "p75": 39.0,
+    "min": 8.0,
+    "max": 52.0
+  },
+  "ks_p": 0.238,
+  "nuclei_total": 172,
+  "nuclei_in_myotube": 37,
+  "fusion_index_pct": 21.5
+}

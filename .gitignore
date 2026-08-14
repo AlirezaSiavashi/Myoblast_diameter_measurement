@@ -1,0 +1,56 @@
+# =========================
+# Claude
+# =========================
+.claude/
+
+# =========================
+# Python environments
+# =========================
+.env
+.env.*
+venv/
+.venv/
+env/
+
+# =========================
+# Datasets
+# =========================
+Erik RMS/
+Katja Myoblasts/
+
+# =========================
+# Python cache
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# =========================
+# Jupyter
+# =========================
+.ipynb_checkpoints/
+
+# =========================
+# IDE
+# =========================
+.vscode/
+.idea/
+
+# =========================
+# OS files
+# =========================
+.DS_Store
+Thumbs.db
+NucleusCounter/
+models/
+# =========================
+# Generated outputs
+# =========================
+output/*
+!output/benchmark/
+!output/dev_method/
+!output/dev_method/
+!output/instances/
+!output/katja_batch/
+!output/katja_feasibility/
+!output/instances/
