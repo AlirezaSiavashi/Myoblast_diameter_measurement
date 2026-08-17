@@ -54,3 +54,4 @@ output/*
 !output/katja_batch/
 !output/katja_feasibility/
 !output/instances/
+!output/for_katja/

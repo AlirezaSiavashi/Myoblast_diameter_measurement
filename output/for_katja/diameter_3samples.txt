@@ -1,0 +1,14 @@
+Per-fiber myotube diameter (um) — OUR method (prune+connectivity) vs KATJA, sorted descending
+Held-out test fields. Diameters in micrometres.
+
+=== E40 · scrambled 3d · f01 ===
+  OURS  n=16 mean=29.7 median=24.3  : [60, 50, 47, 47, 44, 30, 27, 25, 24, 23, 22, 20, 20, 16, 12, 8]
+  KATJA n=17 mean=27.4 median=24.0  : [52, 51, 44, 43, 39, 26, 25, 24, 24, 23, 23, 22, 18, 16, 16, 12, 8]
+
+=== E40 · mi133 3d · f02 ===
+  OURS  n=13 mean=22.7 median=17.3  : [53, 40, 36, 25, 20, 20, 17, 17, 17, 16, 14, 12, 8]
+  KATJA n=14 mean=21.1 median=19.0  : [42, 39, 35, 21, 21, 20, 20, 18, 17, 16, 14, 13, 12, 7]
+
+=== E44 · BSA 3d · f21 ===
+  OURS  n= 9 mean=15.1 median=15.5  : [25, 18, 18, 17, 16, 13, 12, 12, 6]
+  KATJA n= 9 mean=27.6 median=26.0  : [46, 38, 34, 28, 26, 25, 18, 17, 16]
