@@ -5,10 +5,16 @@ The model is a compact multi-head U-Net that predicts, per pixel:
   - sem : fiber-vs-background probability (semantic segmentation)
   - emb : an 8-D instance embedding (same fiber -> similar; used for merging)
   - ori : local fiber orientation (cos 2theta, sin 2theta)
+  - mem : nucleus-membership (in-fiber probability; supervised only on nucleus pixels)
 
-Two input variants are used in the project:
+Input variants used in the project:
   inp=1 : MHC channel only          -> checkpoint output/models/emb_net.pt   (default, no nucleus false positives)
+  inp=2 : MHC + DAPI                 -> checkpoint output/models/mem_net.pt    (adds the membership head -> end-to-end fusion index)
   inp=3 : MHC + DAPI + Myogenin     -> checkpoint output/models/mc_net.pt     (better E44 calibration, but can hallucinate fibers in nucleus-dense regions)
+
+The mem head is only supervised where nuclei are (PU-style): nucleus (DAPI) intersect fiber -> in (1),
+nucleus intersect confident-background (low MHC) -> out (0), everything else ignored. So it learns
+in/out, not fiber-vs-background again. Old 3-head checkpoints load fine (mem head is left at init).
 """
 import numpy as np
 import torch
@@ -36,6 +42,11 @@ def norm(g):
     return np.clip((g - lo) / (hi - lo + 1e-6), 0, 1).astype(np.float32)
 
 
+def prep2(mhc, dapi):
+    """Build the 2-channel model input: [prep_mhc(MHC), norm(DAPI)] -> (2, H, W)."""
+    return np.stack([prep_mhc(mhc), norm(dapi)]).astype(np.float32)
+
+
 # ----------------------------------------------------------------------------- network
 def _cbr(i, o):
     return nn.Sequential(
@@ -55,17 +66,19 @@ class MHNet(nn.Module):
         self.sem = nn.Conv2d(c, 1, 1)
         self.emb = nn.Conv2d(c, EMB, 1)
         self.ori = nn.Conv2d(c, 2, 1)
+        self.mem = nn.Conv2d(c, 1, 1)          # nucleus-membership (in-fiber) logit
 
     def forward(self, x):
         e1 = self.e1(x); e2 = self.e2(self.p(e1)); e3 = self.e3(self.p(e2)); e4 = self.e4(self.p(e3))
         d3 = self.d3(torch.cat([self.u3(e4), e3], 1))
         d2 = self.d2(torch.cat([self.u2(d3), e2], 1))
         f  = self.d1(torch.cat([self.u1(d2), e1], 1))
-        return self.sem(f), self.emb(f), self.ori(f)
+        return self.sem(f), self.emb(f), self.ori(f), self.mem(f)
 
 
 def load_model(checkpoint, inp=1, device="cuda"):
     net = MHNet(40, inp=inp).to(device)
-    net.load_state_dict(torch.load(checkpoint, map_location=device))
+    # strict=False: old 3-head checkpoints (no mem head) still load; mem stays at init.
+    net.load_state_dict(torch.load(checkpoint, map_location=device), strict=False)
     net.eval()
     return net

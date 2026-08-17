@@ -51,8 +51,9 @@ def fields_under(base):
     return out
 
 
-def main(model=DEFAULT_MODEL, min_peel=45, nms=70, single=False):
+def main(model=DEFAULT_MODEL, min_peel=45, nms=70, single=False, width_mode="disk"):
     net = load_model(model, inp=1)
+    print(f"[width_mode={width_mode}]")
     for exp in HELDOUT:
         ours = []; katja = []
         for rf, fld in fields_under(os.path.join(ROOT, exp)):
@@ -63,7 +64,7 @@ def main(model=DEFAULT_MODEL, min_peel=45, nms=70, single=False):
             if mhc.shape[1] >= 1900:
                 continue
             mask = segment(net, mhc)
-            fibs = fibers(mask, pxum=pxum, min_peel=min_peel, nms=nms, single=single)
+            fibs = fibers(mask, pxum=pxum, min_peel=min_peel, nms=nms, single=single, width_mode=width_mode)
             diams = [f["diameter_um"] for f in fibs]
             if len(diams) < 3:
                 continue

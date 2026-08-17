@@ -108,7 +108,7 @@ def main():
 
     net.train(); t0 = time.time()
     for it in range(NITER):
-        P, Fg, V, R, I, O = batch(6); sem, emb, ori = net(P); prob = torch.sigmoid(sem)
+        P, Fg, V, R, I, O = batch(6); sem, emb, ori, _ = net(P); prob = torch.sigmoid(sem)
         bce = (F.binary_cross_entropy_with_logits(sem, Fg, reduction="none") * V).sum() / (V.sum() + 1e-6)
         loss = (bce + 1.5 * dice(prob, Fg, V) + 0.6 * cbdice(prob, Fg, R, V)
                 + 1.0 * disc(emb, I)
