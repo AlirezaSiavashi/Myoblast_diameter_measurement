@@ -43,12 +43,12 @@ Run anything with e.g. `C:/mlenv/Scripts/python.exe src/pipeline.py <field-folde
 
 1. **Segment** (`segment`) — `MHNet` predicts a fiber probability map; threshold + close +
    an **MHC-gate** (a fiber must have red signal → kills nucleus-only false positives).
-2. **Centerlines** (`fibers`) — skeletonize, **prune spurs** (removes the little end-fans that
-   create false junctions), then extract per-fiber spines:
-   - `single=False` (**peel**, default): iterative **longest-path** extraction + spatial **NMS**.
-     Measures every separate fiber → best diameter accuracy.
-   - `single=True`: one main spine per connected component → cleanest one-per-fiber visual,
-     matches the expert's *count/median*, but noisier field-mean (fewer measurements).
+2. **Instance separation** — split the mask into individual myotubes:
+   - `fibers_embed` (**DBSCAN on the learned embedding**, default in `run_field`): cluster skeleton
+     pixels in `[spatial, w_emb·embedding(8-D)]`. The embedding head (discriminative loss) splits
+     touching/fused fibers the geometric skeleton merges. **Best count/instances** (see below).
+   - `fibers` (**peel**): iterative **longest-path** extraction + spatial **NMS** — used for the
+     diameter benchmark; over-counts touching fibers.
 3. **Diameter** — vessel/road-width style **cross-section** (`width_mode="chord"`, default): the
    thickest spine point **with junctions/bellies excluded** (`jfac`) so the caliper lands on a real
    fiber arm, not the fused blob; width is the **perpendicular edge-to-edge chord**, and the caliper
@@ -90,6 +90,51 @@ plain MHC mask misses).
   **CH2/Myogenin adds nothing over DAPI** here (`≥1 Myogenin⁺` ≤ `≥1 any-nucleus` on every metric).
   Kept off for diameter; useful for count/validity. CH2's real value is the *nuclei-per-myotube* readout,
   not diameter (Myogenin⁺ = differentiated myonucleus, 44% of nuclei; sits inside myotubes in the merge).
+
+## Counting / instance separation (vs expert outlines)
+
+The expert provided **fiber outlines on 26 fields (273 myotubes)** — ImageJ polygon ROIs
+(`Katja Myoblasts/myotube outline/`, matched to raw fields). 18 training-domain (E47/E52) + **8 held-out
+(E40/E44, 77 tubes)**. First real instance GT.
+
+**Held-out (E40 + E44, 8 fields / 77 tubes) — the clean benchmark:**
+
+| method | count MAE | count r | count bias | instance F1 @IoU0.5 |
+|--------|-----------|---------|------------|---------------------|
+| peel + NMS (`fibers`) | 6.1 | 0.63 | +6.1 | 0.36 |
+| **DBSCAN on embedding (`fibers_embed`)** | **2.1** | **0.95** | +1.9 | **0.50** |
+
+Semantic **Dice 0.88 held-out** (segmentation was already good; counting was the gap). On the 18
+training-domain fields the gap is even larger (peel MAE 12.4 / r 0.10 vs DBSCAN 3.4 / 0.83).
+
+**Robust across differentiation day** (held-out): DBSCAN count MAE **2.0 (day-3)** and **2.2 (day-5)** —
+where peel collapses on day-5 fused sheets (MAE 9.0). Instance F1 is lower on day-5 (0.39 vs 0.61 day-3)
+because fused mats are boundary-ambiguous even for the expert (she draws few large tubes over a mat), but
+the *count* stays reliable. Qualitative: `output/for_katja/dbscan_vs_outline_heldout.png`.
+
+**Per-tube diameter vs the outline** (match each expert polygon to our instance, compare thickest width):
+
+| set | n tubes | r | MAE | bias | within-5µm | median expert vs ours |
+|-----|---------|---|-----|------|------------|-----------------------|
+| **held-out (E40/E44)** | 58 | **0.84** | 6.5µm | −1.6µm | **66%** | **26 vs 27µm** |
+| all 26 fields | 167 | 0.87 | 9.5µm | −3.5µm | 57% | 28 vs 30µm |
+
+This is the first **per-instance** diameter check (previous r≈0.85 was field-mean vs caliper values). Our
+diameter matches the expert-outlined tube's width at **r=0.84 held-out**, median 26 vs 27µm, slight
+under-measure. (Higher MAE on the dense E47/E52 fields where instance over-splits sample a tube sub-part.)
+
+**DBSCAN clustering of the skeleton in the learned embedding space** (spatial + `w_emb`·embedding)
+cuts held-out count error **3×** (r 0.63→0.95) and lifts instance F1 0.36→0.50 — and it finally *uses
+the embedding head we trained but never deployed*. Orientation added nothing (the embedding already
+separates). Config: `S=60, w_emb=2, eps=1.3` (tuned on the 18 training-domain fields; **confirmed on
+the held-out 8**).
+
+**Diameter vs count use different aggregations (by design):**
+- *Diameter field-mean* is best from **`fibers` (peel)** — dense perpendicular cross-sections give a
+  stable per-field statistic (E40 r=0.86). DBSCAN's one-measurement-per-tube (Katja's exact protocol)
+  is more faithful but has fewer samples → noisier field-mean (E40 r=0.60). `evaluate.py` uses peel.
+- *Count / instances* is best from **`fibers_embed` (DBSCAN)** (table above). `run_field` uses it for
+  the myotube count and overlay; the diameter benchmark stays on peel.
 
 ## Honest limitations
 
