@@ -36,6 +36,7 @@ Run anything with e.g. `C:/mlenv/Scripts/python.exe src/pipeline.py <field-folde
 |------------|-------|-------|
 | **`emb_net.pt`** | MHC only | Default. No nucleus false-positives (a fiber needs MHC support). |
 | **`mem_net.pt`** | MHC+DAPI | **Best / default.** Adds the nucleus-membership head -> end-to-end fusion index, and (with `segment2(refine=True)`) the membership signal recovers faint fibers -> held-out E40 r=0.86, E44 r=0.85. |
+| `mem_net_cons.pt` | MHC+DAPI | Embedding fine-tuned for **long-fiber consistency** (tighter discriminative margin dv=0.3 on the 273 outlines). **Fragments big myotubes less** (expert-reported failure): held-out over-split bias +1.9→−0.6, count MAE 2.1→1.6. **Generalizes** (not better on train than held → no overfit); **diameter preserved** (held per-tube r 0.82, field-mean E40 0.83 / E44 0.86). Small instance-F1 cost (0.50→0.45). Use via `run_field(model=MEM_CONS_MODEL)`. Partial fix — not a cure for day-5 fused mats. |
 | `mc_net.pt`      | MHC+DAPI+Myogenin | Better E44 calibration, but can hallucinate fibers in nucleus-dense regions. |
 | `stage2b_unet.pt`| MHC | Earlier semantic-only model (cbDice). |
 
@@ -122,6 +123,30 @@ the *count* stays reliable. Qualitative: `output/for_katja/dbscan_vs_outline_hel
 This is the first **per-instance** diameter check (previous r≈0.85 was field-mean vs caliper values). Our
 diameter matches the expert-outlined tube's width at **r=0.84 held-out**, median 26 vs 27µm, slight
 under-measure. (Higher MAE on the dense E47/E52 fields where instance over-splits sample a tube sub-part.)
+
+**Instance-refinement ablation (tested negative — the residual is a 2D-data limit, not an algorithm one).**
+The remaining F1 errors are *crossings* (one tube over another at a different depth). Adding depth proxies
+to DBSCAN — pixel intensity (F1 0.58→0.61) or orientation (0.62) — nudges F1 but **trades off count**
+(MAE 2.1→2.8→5.1: more cues → more over-splitting). From-scratch orientation-continuity centerline tracing
+over-fragments (MAE ~20, F1 0.32); a DBSCAN+collinear/appearance merge post-step is ~neutral (F1 0.58).
+Single-plane images carry no true z-depth, so overlapping tubes can't be cleanly split by hand-crafted 2D
+cues. **Supervised embedding fine-tune on the outlines** (`mem_net_ft`, trained on the 18 E47/E52 fields,
+E40/E44 held out) also did NOT break the F1 ceiling: it removed the count bias (MAE 2.1→**1.6**, bias
++1.9→−0.4 — a small *counting* win) but instance F1 stayed ~0.5 (0.42 at default params; 0.59 only with
+test-tuned over-split params). Four independent methods (depth features, tracing, collinear merge, supervised
+embedding, orientation source-separation) all land F1 ≈ 0.5 → it is a real ceiling for the embedding-cluster
+family, driven by 2D-depth ambiguity at crossings (additive fluorescence superposition) and the crude
+mask→instance assignment. Corroborated externally: even 3D-z-stack SOTA (Exler 2026) reaches only IPQ 0.22. To pass it needs a different output
+representation — an end-to-end **mask-decoder instance model** (Mask-R-CNN/SAM-style) trained on the
+outlines (273 tubes is small for it) — or **confocal z-stacks** for true depth.
+
+**Foundation-model features (DINOv2/v3) — tested negative (drop-in).** DINOv3 weights are gated (HTTP 403);
+tested with DINOv2 as proxy. Using DINOv2 dense features as the clustering embedding gave held-out instance
+**F1 0.09 vs our 0.58**, and concatenating them *destroyed* our embedding (0.58→0.10). Cause: natural-image
+domain gap (fluorescence is OOD → features don't encode fiber identity) + coarse 14-px patches. Our small
+task-specific embedding beats a 21M-param foundation model ~6:1 here — domain-matched supervision > scale for
+this fine-grained instance task. DINOv3 is only incrementally better on *natural* images, so it would not
+close this gap without microscopy fine-tuning (no longer drop-in; small-data limited).
 
 **DBSCAN clustering of the skeleton in the learned embedding space** (spatial + `w_emb`·embedding)
 cuts held-out count error **3×** (r 0.63→0.95) and lifts instance F1 0.36→0.50 — and it finally *uses

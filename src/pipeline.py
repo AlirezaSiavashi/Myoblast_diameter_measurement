@@ -39,6 +39,8 @@ PXUM_1920 = 2.64         # px per um for 1920x1440 (native) images  (E52 Klara)
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 DEFAULT_MODEL = os.path.join(PROJ, "output", "models", "emb_net.pt")   # MHC-only (inp=1)
 MEM_MODEL = os.path.join(PROJ, "output", "models", "mem_net.pt")       # MHC+DAPI + membership head (inp=2)
+MEM_CONS_MODEL = os.path.join(PROJ, "output", "models", "mem_net_cons.pt")  # embedding fine-tuned for long-fiber
+# consistency (tighter intra-fiber margin) -> fragments big myotubes less; run_field(model=MEM_CONS_MODEL)
 
 _K8 = np.ones((3, 3), int); _K8[1, 1] = 0
 
