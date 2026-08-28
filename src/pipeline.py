@@ -41,6 +41,14 @@ DEFAULT_MODEL = os.path.join(PROJ, "output", "models", "emb_net.pt")   # MHC-onl
 MEM_MODEL = os.path.join(PROJ, "output", "models", "mem_net.pt")       # MHC+DAPI + membership head (inp=2)
 MEM_CONS_MODEL = os.path.join(PROJ, "output", "models", "mem_net_cons.pt")  # embedding fine-tuned for long-fiber
 # consistency (tighter intra-fiber margin) -> fragments big myotubes less; run_field(model=MEM_CONS_MODEL)
+MEM_CONS2_MODEL = os.path.join(PROJ, "output", "models", "mem_net_cons2.pt")  # cons + 8 E40/E44 outline fields
+DS_MODEL = os.path.join(PROJ, "output", "models", "mem_net_ds.pt")            # + gap-tolerant Dynamic Snake blocks
+WID_MODEL = os.path.join(PROJ, "output", "models", "mem_net_wid.pt")          # BEST: DS + learned width head
+# load the last two with load_model(..., arch="ds").  Held-out (5 outlined E40/E44 fields):
+#   cons2   F1 0.69  count MAE 2.0   | DS  F1 0.72  count MAE 1.0
+#   diameter: geometric r=0.38 MAE 22.4um  ->  learned width head r=0.90 MAE 8.1um (see diameter_head)
+WID_SCALE = 50.0          # width head regresses width/WID_SCALE
+WID_CAL = (1.125, 0.59)   # (a, b) calibration fitted on the TRAIN outline fields only
 
 _K8 = np.ones((3, 3), int); _K8[1, 1] = 0
 
@@ -49,7 +57,7 @@ _K8 = np.ones((3, 3), int); _K8[1, 1] = 0
 def segment(net, mhc, thr=0.45, mhc_gate=True):
     """MHC image -> solid fiber mask. mhc_gate rejects nucleus-dense regions with no MHC support."""
     with torch.no_grad():
-        sem, emb, ori, mem = net(torch.from_numpy(prep_mhc(mhc))[None, None].float().to(DEVICE))
+        sem, emb, ori, mem = net(torch.from_numpy(prep_mhc(mhc))[None, None].float().to(DEVICE))[:4]
     prob = torch.sigmoid(sem)[0, 0].cpu().numpy()
     mask = binary_closing(remove_small_holes(remove_small_objects(prob > thr, 300), 2000), disk(4))
     if mhc_gate:
@@ -71,7 +79,7 @@ def segment2(net, mhc, dapi, thr=0.45, mhc_gate=True, refine=False, return_feats
     refine=True uses the membership head to grow the mask into in-fiber nuclei (faint-fiber recovery).
     return_feats=True also returns (emb (8,H,W), ori (2,H,W)) for embedding-based instance separation."""
     with torch.no_grad():
-        sem, emb, ori, mem = net(torch.from_numpy(prep2(mhc, dapi))[None].float().to(DEVICE))
+        sem, emb, ori, mem = net(torch.from_numpy(prep2(mhc, dapi))[None].float().to(DEVICE))[:4]
     prob = torch.sigmoid(sem)[0, 0].cpu().numpy()
     memp = torch.sigmoid(mem)[0, 0].cpu().numpy()
     mask = binary_closing(remove_small_holes(remove_small_objects(prob > thr, 300), 2000), disk(4))
@@ -83,6 +91,48 @@ def segment2(net, mhc, dapi, thr=0.45, mhc_gate=True, refine=False, return_feats
     if return_feats:
         return mask, memp, emb[0].cpu().numpy(), ori[0].cpu().numpy()
     return mask, memp
+
+
+def width_map(net, mhc, dapi):
+    """Per-pixel local fiber width in um from the learned width head (calibrated).
+
+    Diameter derived geometrically from a skeleton is hostage to instance errors: on the held-out
+    outlines the matched-instance IoU is only 0.40-0.59, so a small tube merged into a big instance
+    inherits its width (+114%) and a split big tube is measured on a sub-part (-15%). The width head
+    predicts width as a LOCAL property of each pixel, so it stays correct under split/merge.
+    Held-out per-tube: r=0.90, MAE 8.1um, bias -0.9um (vs geometric r=0.38, MAE 22.4um)."""
+    with torch.no_grad():
+        w = net(torch.from_numpy(prep2(mhc, dapi))[None].float().to(DEVICE))[4][0, 0].cpu().numpy()
+    a, b = WID_CAL
+    return a * (w * WID_SCALE) + b
+
+
+def diameter_head(wmap, region, q=75):
+    """Diameter (um) of one myotube from the width map: calibrated q-th percentile over its pixels.
+    q=75 (not max) was selected on the TRAIN outline fields -- it is robust to a few over-wide
+    pixels at merges while still reading the thick part of the tube."""
+    v = wmap[region]
+    return float(np.percentile(v, q)) if v.size else float("nan")
+
+
+def fibers_width(fibs, wmap, mask, q=75):
+    """Replace each fiber's geometric diameter_um with the learned-width-head reading over its own
+    pixels (nearest-spine assignment), keeping the caliper endpoints for display."""
+    if not fibs:
+        return fibs
+    pts = []; labs = []
+    for i, f in enumerate(fibs, 1):
+        for (y, x) in f["path"]:
+            pts.append((y, x)); labs.append(i)
+    inst = np.zeros(mask.shape, np.int32)
+    my, mx = np.where(mask)
+    _, idx = cKDTree(pts).query(np.c_[my, mx])
+    inst[my, mx] = np.asarray(labs)[idx]
+    for i, f in enumerate(fibs, 1):
+        d = diameter_head(wmap, inst == i, q)
+        if np.isfinite(d) and 3 <= d <= 200:
+            f["diameter_um"] = d
+    return fibs
 
 
 def prune_spurs(skel, min_len=9):

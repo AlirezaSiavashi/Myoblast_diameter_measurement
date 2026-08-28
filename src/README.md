@@ -36,7 +36,10 @@ Run anything with e.g. `C:/mlenv/Scripts/python.exe src/pipeline.py <field-folde
 |------------|-------|-------|
 | **`emb_net.pt`** | MHC only | Default. No nucleus false-positives (a fiber needs MHC support). |
 | **`mem_net.pt`** | MHC+DAPI | **Best / default.** Adds the nucleus-membership head -> end-to-end fusion index, and (with `segment2(refine=True)`) the membership signal recovers faint fibers -> held-out E40 r=0.86, E44 r=0.85. |
-| `mem_net_cons.pt` | MHC+DAPI | Embedding fine-tuned for **long-fiber consistency** (tighter discriminative margin dv=0.3 on the 273 outlines). **Fragments big myotubes less** (expert-reported failure): held-out over-split bias +1.9→−0.6, count MAE 2.1→1.6. **Generalizes** (not better on train than held → no overfit); **diameter preserved** (held per-tube r 0.82, field-mean E40 0.83 / E44 0.86). Small instance-F1 cost (0.50→0.45). Use via `run_field(model=MEM_CONS_MODEL)`. Partial fix — not a cure for day-5 fused mats. |
+| `mem_net_cons.pt` | MHC+DAPI | Embedding fine-tuned for **long-fiber consistency** (tighter discriminative margin dv=0.3 on the 273 outlines). **Fragments big myotubes less** (expert-reported failure): held-out over-split bias +1.9→−0.6, count MAE 2.1→1.6. Generalizes (no overfit); diameter preserved. Superseded by `mem_net_cons2`. |
+| `mem_net_cons2.pt` | MHC+DAPI | `cons` + trained on **8 E40/E44 outline fields** too (314 tubes / 34 fields; 5 E40/E44 held out untouched). On the held-out 5: instance **F1 0.56→0.69**, count **MAE 3.4→2.0**, diameter **r 0.85**. Training on the target domain is the win. Use via `run_field(model=MEM_CONS2_MODEL)`. |
+| `mem_net_ds.pt` | MHC+DAPI | `cons2` + **gap-tolerant Dynamic Snake blocks** + dilated bottleneck, trained on 512 crops with strong augmentation incl. **fiber-gap dropout** (`dsconv.py`, `train_ds.py`). Held-out: instance **F1 0.72**, count **MAE 1.0** (bias +0.2). Load with `load_model(..., arch="ds")`. |
+| **`mem_net_wid.pt`** | MHC+DAPI | **BEST.** `mem_net_ds` + **learned per-pixel width head** (`train_wid.py`). Diameter read from the width map instead of skeleton geometry: held-out per-tube **r 0.90, MAE 8.1 um, bias -0.9** (geometric: r 0.38, MAE 22.4). Load with `arch="ds"`; use `width_map()` + `fibers_width()`. |
 | `mc_net.pt`      | MHC+DAPI+Myogenin | Better E44 calibration, but can hallucinate fibers in nucleus-dense regions. |
 | `stage2b_unet.pt`| MHC | Earlier semantic-only model (cbDice). |
 
@@ -160,6 +163,28 @@ the held-out 8**).
   is more faithful but has fewer samples → noisier field-mean (E40 r=0.60). `evaluate.py` uses peel.
 - *Count / instances* is best from **`fibers_embed` (DBSCAN)** (table above). `run_field` uses it for
   the myotube count and overlay; the diameter benchmark stays on peel.
+
+## Diameter: learned width head (the fix for big-fiber diameter)
+
+Diagnosis on the held-out outlines: diameter error is dominated by **instance** errors, not caliper
+geometry. Matched-instance IoU is only 0.40-0.59, so a small tube merged into a big instance inherits
+its width (**+114%**) and a split big tube is measured on a sub-part (**-15%**). Junction exclusion
+(`jfac`) accounts for only ~2 um of the big-fiber error, i.e. it was **not** the cause.
+
+Fix: regress **local fiber width per pixel** (`wid` head), supervised by the expert outlines
+(target = 2 x EDT at the nearest polygon-skeleton point, normalised by `WID_SCALE`). Width is then a
+LOCAL property that survives split/merge. Readout = calibrated 75th percentile over the instance
+(`diameter_head`); the percentile and linear calibration `WID_CAL` were selected on the TRAIN
+outline fields only.
+
+| held-out per-tube diameter | r | MAE | bias | within 10 um |
+|---|---|---|---|---|
+| geometric (skeleton caliper) | 0.38 | 22.4 um | +8.8 | 59% |
+| **learned width head (calibrated)** | **0.90** | **8.1 um** | **-0.9** | **76%** |
+
+Per size: small MAE 3.9 (was 22.2), medium 8.5 (was 16.7), **BIG >40um 17.6 (was 32.4)**.
+Note: raw-um regression did NOT converge (r=0.02); the target must be normalised and the head bias
+initialised at the mean width -- that is what `train_wid.py` does.
 
 ## Honest limitations
 
